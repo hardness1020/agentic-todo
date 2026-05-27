@@ -144,10 +144,15 @@ B's todos).
 ├── frontend/
 │   └── src/             # api.js, App, AuthView, TodoList
 ├── docs/screenshots/
-└── PRD.md               # the approved product requirement doc
+├── PRD.md               # the approved product requirement doc
+└── REVIEW.md            # boundary-compliance review of the implementation
 ```
 
 ## Design Notes & Scope
+
+This project was built against an approved spec: see [`PRD.md`](PRD.md) for the full
+product requirements and boundaries, and [`REVIEW.md`](REVIEW.md) for a boundary-by-boundary
+compliance review of the final implementation (with code evidence and remaining risks).
 
 In line with the PRD, the following are intentionally **out of scope**: sharing/
 collaboration, due dates and tags, email verification / password reset / OAuth, and
