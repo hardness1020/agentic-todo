@@ -1,0 +1,253 @@
+/* ============================================================
+   Tally Design System — Foundations
+   Warm, photography-forward visual language (Airbnb-inspired)
+   applied to an AI-powered TODO dashboard.
+
+   Font: Nunito Sans (open substitute for the proprietary
+   Airbnb Cereal — warm, rounded humanist sans).
+   ============================================================ */
+
+/* ---- Webfont -------------------------------------------------- */
+@font-face {
+  font-family: "Nunito Sans";
+  src: url("fonts/NunitoSans.ttf") format("truetype-variations");
+  font-weight: 200 900;
+  font-stretch: 75% 125%;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* ============================================================
+     COLOR — Palette (raw values)
+     ============================================================ */
+
+  /* Brand — Rausch Red family (use sparingly: CTAs & accents only) */
+  --rausch:            #ff385c;  /* primary brand accent / CTA */
+  --rausch-deep:       #e00b41;  /* pressed / dark variant */
+  --rausch-tint:       #fff0f3;  /* faint brand wash for hover surfaces */
+
+  /* Premium tiers (rarely used; kept for completeness) */
+  --luxe:              #460479;
+  --plus:              #92174d;
+
+  /* Neutral text scale — warm, never pure black */
+  --ink:               #222222;  /* primary text */
+  --ink-focused:       #3f3f3f;  /* focused-state text */
+  --ink-soft:          #6a6a6a;  /* secondary text, descriptions */
+  --ink-faint:         #929292;  /* tertiary / disabled links */
+  --ink-disabled:      rgba(0,0,0,0.24);
+
+  /* Surfaces */
+  --white:             #ffffff;  /* page + card surface */
+  --surface:           #f7f7f7;  /* app background wash */
+  --surface-2:         #f2f2f2;  /* circular controls, secondary fills */
+  --surface-3:         #ebebeb;  /* hover fill on neutral controls */
+
+  /* Borders / dividers */
+  --border:            #dddddd;  /* default hairline */
+  --border-strong:     #c1c1c1;  /* emphasized border */
+  --border-faint:      #ebebeb;  /* subtle divider */
+
+  /* Semantic — derived harmoniously for TODO states
+     (the Airbnb spec is silent on success/warning; these are
+     oklch-tuned to sit comfortably beside Rausch Red) */
+  --success:           #1f8a5b;  /* completed todo, positive */
+  --success-tint:      #e8f5ee;
+  --warning:           #b8730a;  /* due soon */
+  --warning-tint:      #fcf3e2;
+  --error:             #c13515;  /* error text on light */
+  --error-hover:       #b32505;
+  --error-tint:        #fdecea;
+  --info:              #428bff;  /* informational / legal links */
+
+  /* Reactive highlight — the "agent just touched this" flash
+     (PRD: yellow box that flashes and fades) */
+  --highlight:         #fff3c4;
+  --highlight-ring:    #f4cf57;
+
+  /* ============================================================
+     SEMANTIC COLOR ALIASES
+     ============================================================ */
+  --bg-page:           var(--surface);
+  --bg-card:           var(--white);
+  --fg:                var(--ink);
+  --fg-muted:          var(--ink-soft);
+  --fg-faint:          var(--ink-faint);
+  --accent:            var(--rausch);
+  --accent-pressed:    var(--rausch-deep);
+  --link:              var(--info);
+
+  /* ============================================================
+     TYPOGRAPHY
+     ============================================================ */
+  --font-sans: "Nunito Sans", Circular, -apple-system, BlinkMacSystemFont,
+               system-ui, Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+
+  /* Weights — warm range; 500 minimum for headings */
+  --w-regular:   400;
+  --w-medium:    500;
+  --w-semibold:  600;
+  --w-bold:      700;
+  --w-extra:     800;
+
+  /* Type scale (rem @ 16px base) */
+  --text-display: 2.5rem;   /* 40px — dashboard hero number / page title */
+  --text-h1:      1.75rem;  /* 28px — section heading */
+  --text-h2:      1.375rem; /* 22px — card heading */
+  --text-h3:      1.25rem;  /* 20px — feature title */
+  --text-lg:      1.125rem; /* 18px — emphasized body */
+  --text-base:    1rem;     /* 16px — UI / button */
+  --text-sm:      0.875rem; /* 14px — body / link */
+  --text-xs:      0.8125rem;/* 13px — small descriptions */
+  --text-tag:     0.75rem;  /* 12px — tags, meta */
+  --text-badge:   0.6875rem;/* 11px — badges */
+  --text-micro:   0.5rem;   /* 8px  — uppercase micro labels */
+
+  /* Line heights */
+  --lh-tight:   1.18;
+  --lh-snug:    1.25;
+  --lh-normal:  1.43;
+
+  /* Letter spacing — negative tracking creates intimate headings */
+  --tracking-tight:  -0.44px;
+  --tracking-snug:   -0.18px;
+  --tracking-normal: 0;
+  --tracking-caps:   0.32px;
+
+  /* ============================================================
+     SPACING — base unit 8px
+     ============================================================ */
+  --space-2:  2px;
+  --space-3:  3px;
+  --space-4:  4px;
+  --space-6:  6px;
+  --space-8:  8px;
+  --space-10: 10px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-40: 40px;
+  --space-48: 48px;
+  --space-64: 64px;
+
+  /* ============================================================
+     RADII
+     ============================================================ */
+  --r-sm:    4px;   /* small links / chips */
+  --r-md:    8px;   /* buttons, inputs, tabs */
+  --r-badge: 14px;  /* status badges */
+  --r-card:  20px;  /* cards, large buttons */
+  --r-lg:    32px;  /* hero containers, search bar */
+  --r-full:  999px; /* pills + circular controls */
+
+  /* ============================================================
+     ELEVATION — warm, graduated three-layer shadows
+     ============================================================ */
+  --shadow-card:
+    rgba(0,0,0,0.02) 0px 0px 0px 1px,
+    rgba(0,0,0,0.04) 0px 2px 6px,
+    rgba(0,0,0,0.10) 0px 4px 8px;
+  --shadow-hover:
+    rgba(0,0,0,0.04) 0px 0px 0px 1px,
+    rgba(0,0,0,0.08) 0px 4px 12px,
+    rgba(0,0,0,0.12) 0px 8px 20px;
+  --shadow-pop:
+    rgba(0,0,0,0.06) 0px 0px 0px 1px,
+    rgba(0,0,0,0.12) 0px 12px 32px,
+    rgba(0,0,0,0.16) 0px 6px 16px;
+  --focus-ring: 0 0 0 2px var(--white), 0 0 0 4px var(--ink);
+
+  /* ============================================================
+     MOTION
+     ============================================================ */
+  --ease-out:   cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-press: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast:   140ms;
+  --dur-base:   220ms;
+  --dur-slow:   400ms;
+  --dur-flash:  1500ms; /* reactive highlight flash */
+}
+
+/* ============================================================
+   SEMANTIC ELEMENT STYLES
+   Apply via these classes or copy the declarations.
+   ============================================================ */
+.ds-display {
+  font-family: var(--font-sans);
+  font-size: var(--text-display);
+  font-weight: var(--w-extra);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--fg);
+}
+.ds-h1 {
+  font-family: var(--font-sans);
+  font-size: var(--text-h1);
+  font-weight: var(--w-bold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-snug);
+  color: var(--fg);
+}
+.ds-h2 {
+  font-family: var(--font-sans);
+  font-size: var(--text-h2);
+  font-weight: var(--w-semibold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--fg);
+}
+.ds-h3 {
+  font-family: var(--font-sans);
+  font-size: var(--text-h3);
+  font-weight: var(--w-semibold);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--tracking-snug);
+  color: var(--fg);
+}
+.ds-body {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: var(--w-regular);
+  line-height: var(--lh-normal);
+  color: var(--fg);
+}
+.ds-body-strong {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: var(--w-semibold);
+  line-height: var(--lh-snug);
+  color: var(--fg);
+}
+.ds-ui {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  font-weight: var(--w-medium);
+  line-height: var(--lh-snug);
+  color: var(--fg);
+}
+.ds-small {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: var(--w-regular);
+  line-height: var(--lh-snug);
+  color: var(--fg-muted);
+}
+.ds-micro {
+  font-family: var(--font-sans);
+  font-size: var(--text-micro);
+  font-weight: var(--w-bold);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.ds-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--w-regular);
+  color: var(--fg);
+}
