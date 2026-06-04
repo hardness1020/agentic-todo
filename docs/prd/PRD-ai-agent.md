@@ -51,6 +51,12 @@ API key** (the rest of the app keeps working).
   - **LLM error recovery:** 429 backoff with jitter, 529/overload → fallback model after N retries,
     `max_tokens` escalation/continuation, prompt-too-long → one reactive trim, and graceful
     degradation when `ANTHROPIC_API_KEY` is absent.
+  - **Rule-based auto-compaction:** before each model call the working context is shrunk by
+    deterministic passes (no summariser LLM) — an oversized tool result is truncated, older tool
+    outputs collapse to a placeholder once past `AGENT_CONTEXT_CHAR_BUDGET`, then the oldest turns are
+    dropped at a safe user-prompt boundary. It is **non-mutating**: only the in-flight context shrinks,
+    the persisted transcript stays complete. The proactive complement to the reactive prompt-too-long
+    trim above.
   - **Persisted conversation** per user (history seeds context across turns).
   - **Notifications** surfaced in the dashboard via two distinct mechanisms:
     - **Header bell popover** (360 px wide): lists notifications with title, body, relative
@@ -83,7 +89,9 @@ API key** (the rest of the app keeps working).
   - Sharing/collaboration, voice, and **vector/embedding-based RAG** — memory retrieval is a
     lightweight secondary-LLM relevance pass over the user's own stored facts, not embeddings.
   - The heavier `code.py` mechanisms: worktrees, teammates/message-bus, MCP, subagents, skills,
-    hook/permission pipeline, full context compaction, background tasks.
+    hook/permission pipeline, **LLM-summarising** context compaction (the rule-based auto-compaction
+    above is in scope — the model-summariser variant that calls Claude to rewrite history is not),
+    background tasks.
   - Celery/Redis or any new scheduling/broker infrastructure.
   - Production hardening (HTTPS, rate limiting, async task offload, horizontal scaling).
 
@@ -140,6 +148,9 @@ API key** (the rest of the app keeps working).
     switching to the fallback model; `max_tokens` 8000 escalating to 16000 once, then a bounded
     continuation; bounded tool-loop turns per request.
   - Injected memory is length-capped (~2000 chars) to bound prompt size/cost.
+  - **Auto-compaction** keeps the working context bounded: once it exceeds `AGENT_CONTEXT_CHAR_BUDGET`
+    (default 60000 JSON chars) old tool outputs collapse and the oldest turns are trimmed, all with
+    cheap deterministic passes — no extra LLM call, so it adds negligible latency.
   - **Memory retrieval** calls the secondary model **at most once per turn**, and only when stored
     facts exceed `AGENT_MEMORY_RETRIEVAL_THRESHOLD` (default 5); it is best-effort and **not** retried
     (any failure falls back to injecting all facts, capped), so it adds at most one short, bounded
@@ -162,7 +173,9 @@ API key** (the rest of the app keeps working).
     the scheduler logs a warning and skips firing — **the rest of the app remains fully functional.**
   - **429 (rate limit):** exponential backoff + jitter, then retry.
   - **529 / overloaded:** retry; after `MAX_CONSECUTIVE_529`, switch to the fallback model (if set).
-  - **Prompt too long:** one reactive trim of older history, then retry once.
+  - **Prompt too long:** one reactive trim of older history, then retry once (rule-based
+    auto-compaction runs before every call, so the context is usually already under budget when
+    this fires).
   - **Other LLM errors:** an assistant error message is persisted to the transcript and the turn
     ends cleanly; the app keeps running.
 
@@ -188,6 +201,9 @@ API key** (the rest of the app keeps working).
     offline.)
   - Scheduler firing: a matching job fires once (double-fire guard), a one-shot deactivates,
     a recurring job stays active, and the fire creates a notification owned by the job's owner.
+  - **Rule-based auto-compaction:** the cap/collapse/boundary-safe-trim passes are non-mutating and
+    never orphan a tool_use/tool_result pair, and the loop sends the model a within-budget context
+    while the stored transcript stays full-fidelity. (Fake client, offline.)
   - Notification and stats endpoints are owner-scoped; `401` without a token.
   - The **existing 21 backend tests still pass.**
 - **User-visible behavior:**
@@ -224,8 +240,10 @@ unchanged.
   `memory.py` (`candidate_memories` / `format_memories` / `retrieve_relevant` — the secondary-LLM
   relevance pass with a below-threshold short-circuit and best-effort fallback),
   `prompt.py` (`assemble_system_prompt(user, memory_block)`), `tools.py` (static `TOOL_SCHEMAS` +
-  `build_handlers(user)` closure — the isolation guardrail), `runner.py` (`run_agent_turn` retrieves
-  the relevant memories once per turn, then runs the tool loop and collects `actions`),
+  `build_handlers(user)` closure — the isolation guardrail),
+  `compaction.py` (rule-based `prepare_context` — cap / collapse / boundary-safe trim, non-mutating),
+  `runner.py` (`run_agent_turn` retrieves the relevant memories once per turn, auto-compacts the
+  context before each model call, then runs the tool loop and collects `actions`),
   `cron.py` (pure cron validate/match ported from `code.py`).
 - Scheduler: `python manage.py run_scheduler` polls active jobs (~30 s), sets the minute marker and
   deactivates one-shots **before** firing each matching job agentically via the shared runner.
@@ -276,7 +294,7 @@ unchanged.
   changes). `.env.example`: add `ANTHROPIC_API_KEY` (blank = run without the assistant),
   `ANTHROPIC_MODEL` (default a current Claude model), `ANTHROPIC_FALLBACK_MODEL` (optional),
   `ANTHROPIC_SECONDARY_MODEL` (memory-retrieval model, default a fast Claude e.g. `claude-haiku-4-5`),
-  `AGENT_MEMORY_RETRIEVAL_THRESHOLD`, `AGENT_SCHEDULER_INTERVAL`.
+  `AGENT_MEMORY_RETRIEVAL_THRESHOLD`, `AGENT_SCHEDULER_INTERVAL`, `AGENT_CONTEXT_CHAR_BUDGET`.
 - Run three processes locally: `manage.py runserver`, `manage.py run_scheduler`, and `npm run dev`.
 
 **Tests:** DRF `APITestCase` mirroring the base suite, plus runner tests that inject a fake Anthropic

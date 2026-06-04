@@ -13,6 +13,7 @@ import logging
 
 from django.conf import settings
 
+from agent.compaction import prepare_context
 from agent.llm import (
     CONTINUATION_PROMPT,
     DEFAULT_MAX_TOKENS,
@@ -129,6 +130,10 @@ def run_loop(user, messages, client, persist, memory_block=None):
     max_turns = _max_turns()
 
     for _ in range(max_turns):
+        # Auto-compact the working context before every model call (rule-based,
+        # non-destructive: the stored transcript keeps full fidelity). This is
+        # the proactive complement to the reactive prompt-too-long trim below.
+        messages[:] = prepare_context(messages)
         system = assemble_system_prompt(user, memory_block)
         try:
             response = with_retry(

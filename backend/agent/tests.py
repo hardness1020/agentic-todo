@@ -6,11 +6,12 @@ actions), the no-key 503 path, agent-tool per-user isolation, memory
 upsert/isolation/prompt-injection, scheduler firing semantics, and owner-scoped
 endpoints with 401 gating.
 """
+import copy
 from datetime import datetime
 from unittest import mock
 
 from django.contrib.auth.models import User
-from django.test import override_settings
+from django.test import override_settings, SimpleTestCase
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -27,7 +28,9 @@ from agent.models import (
 from agent.prompt import assemble_system_prompt
 from agent.runner import run_agent_turn, run_cron_turn
 from agent.scheduler import run_due_jobs
+from agent import compaction as compaction_mod
 from agent import memory as memory_mod
+from agent.llm import CONTINUATION_PROMPT
 
 
 # ───────────────────────── Fake Anthropic client ─────────────────────────
@@ -638,3 +641,220 @@ class EndpointScopingTests(APITestCase):
                     '/api/notifications/', '/api/todos/stats/']:
             self.assertEqual(self.client.get(url).status_code,
                              status.HTTP_401_UNAUTHORIZED, url)
+
+
+# ─────────────────────── Rule-based auto-compaction ───────────────────────
+
+def _user(text):
+    return {'role': 'user', 'content': text}
+
+
+def _assistant_tool(tool_use_id, name, tool_input=None):
+    return {'role': 'assistant',
+            'content': [{'type': 'tool_use', 'id': tool_use_id,
+                         'name': name, 'input': tool_input or {}}]}
+
+
+def _tool_result(tool_use_id, content):
+    return {'role': 'user',
+            'content': [{'type': 'tool_result',
+                         'tool_use_id': tool_use_id, 'content': content}]}
+
+
+def _assistant_text(text):
+    return {'role': 'assistant', 'content': [{'type': 'text', 'text': text}]}
+
+
+def _tool_pairs_balanced(messages):
+    """Every tool_use is answered by a tool_result with the same id (no orphans)."""
+    use_ids, result_ids = set(), set()
+    for msg in messages:
+        content = msg.get('content')
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if block.get('type') == 'tool_use':
+                use_ids.add(block['id'])
+            elif block.get('type') == 'tool_result':
+                result_ids.add(block['tool_use_id'])
+    return use_ids == result_ids
+
+
+class CompactionUnitTests(SimpleTestCase):
+    """The deterministic passes in :mod:`agent.compaction` (no DB, no LLM)."""
+
+    def test_cap_truncates_only_oversized_results_and_preserves_pairing(self):
+        big = 'x' * (compaction_mod.TOOL_RESULT_MAX_CHARS + 500)
+        messages = [
+            _user('hi'),
+            _assistant_tool('t1', 'list_todos'),
+            _tool_result('t1', big),
+            _assistant_tool('t2', 'get_todo_stats'),
+            _tool_result('t2', 'small'),
+        ]
+        snapshot = copy.deepcopy(messages)
+        out = compaction_mod.cap_tool_result_content(messages)
+
+        capped = out[2]['content'][0]
+        self.assertLess(len(capped['content']), len(big))
+        self.assertIn('truncated', capped['content'])
+        self.assertEqual(capped['tool_use_id'], 't1')        # pairing intact
+        self.assertEqual(out[4]['content'][0]['content'], 'small')  # small untouched
+        self.assertEqual(messages, snapshot)                 # input not mutated
+
+    def test_compact_old_results_keeps_recent_intact(self):
+        messages = [_user('go')]
+        for i in range(5):
+            messages.append(_assistant_tool(f't{i}', 'list_todos'))
+            messages.append(_tool_result(f't{i}', f'result-body-{i} ' * 10))
+        snapshot = copy.deepcopy(messages)
+
+        out = compaction_mod.compact_old_tool_results(messages, keep_recent=2)
+        bodies = [b['content'] for m in out if isinstance(m['content'], list)
+                  for b in m['content'] if b.get('type') == 'tool_result']
+        # 5 results: first 3 collapsed, last 2 kept verbatim.
+        self.assertEqual(bodies[:3], [compaction_mod.COMPACTED_PLACEHOLDER] * 3)
+        self.assertNotIn(compaction_mod.COMPACTED_PLACEHOLDER, bodies[3:])
+        self.assertTrue(_tool_pairs_balanced(out))
+        self.assertEqual(messages, snapshot)                 # input not mutated
+
+    def test_compact_old_results_noop_at_or_below_keep_recent(self):
+        messages = [_user('go'),
+                    _assistant_tool('t1', 'list_todos'),
+                    _tool_result('t1', 'body ' * 20)]
+        out = compaction_mod.compact_old_tool_results(messages, keep_recent=3)
+        self.assertIs(out, messages)
+
+    def test_trim_history_keeps_first_prompt_and_recent_turn(self):
+        messages = [
+            _user('first ask'),
+            _assistant_tool('t1', 'list_todos'),
+            _tool_result('t1', 'a'),
+            _assistant_text('done one'),
+            _user('second ask'),
+            _assistant_tool('t2', 'get_todo_stats'),
+            _tool_result('t2', 'b'),
+            _user('third ask'),
+            _assistant_text('working'),
+        ]
+        out = compaction_mod.trim_history(messages)
+        self.assertEqual(out[0], _user('first ask'))         # first prompt kept
+        self.assertEqual(out[1]['content'], compaction_mod.TRIM_MARKER)
+        self.assertEqual(out[2], _user('third ask'))         # suffix from latest prompt
+        self.assertEqual(out[-1], _assistant_text('working'))
+        self.assertEqual(out[0]['role'], 'user')             # valid start boundary
+        self.assertIsInstance(out[0]['content'], str)
+        self.assertTrue(_tool_pairs_balanced(out))
+
+    def test_trim_history_unchanged_with_single_boundary(self):
+        messages = [_user('only ask'),
+                    _assistant_tool('t1', 'list_todos'),
+                    _tool_result('t1', 'x')]
+        self.assertIs(compaction_mod.trim_history(messages), messages)
+
+    def test_trim_history_ignores_continuation_prompt_as_boundary(self):
+        # The synthetic continuation prompt is a string user message but must
+        # NOT be treated as a real boundary to anchor the kept suffix on.
+        messages = [_user('real ask'),
+                    _assistant_text('partial'),
+                    _user(CONTINUATION_PROMPT),
+                    _assistant_text('more')]
+        self.assertIs(compaction_mod.trim_history(messages), messages)
+
+    @override_settings(AGENT_CONTEXT_CHAR_BUDGET=10_000_000)
+    def test_prepare_context_under_budget_only_caps_oversized(self):
+        # Well under budget: old tool results are NOT collapsed; a single huge
+        # one is still hard-capped.
+        big = 'y' * (compaction_mod.TOOL_RESULT_MAX_CHARS + 100)
+        messages = [_user('go')]
+        for i in range(5):
+            messages.append(_assistant_tool(f't{i}', 'list_todos'))
+            messages.append(_tool_result(f't{i}', big if i == 0 else f'small-{i}'))
+        out = compaction_mod.prepare_context(messages)
+
+        bodies = [b['content'] for m in out if isinstance(m['content'], list)
+                  for b in m['content'] if b.get('type') == 'tool_result']
+        self.assertIn('truncated', bodies[0])                # oversized capped
+        self.assertNotIn(compaction_mod.COMPACTED_PLACEHOLDER, bodies)  # none collapsed
+
+    @override_settings(AGENT_CONTEXT_CHAR_BUDGET=400)
+    def test_prepare_context_over_budget_compacts_then_trims_safely(self):
+        messages = [_user('first ' * 30)]
+        for i in range(6):
+            messages.append(_assistant_tool(f't{i}', 'list_todos'))
+            messages.append(_tool_result(f't{i}', f'body-{i} ' * 20))
+            messages.append(_user(f'follow-up number {i} ' * 5))
+            messages.append(_assistant_text(f'reply {i}'))
+        snapshot = copy.deepcopy(messages)
+
+        out = compaction_mod.prepare_context(messages)
+        self.assertLess(compaction_mod.estimate_size(out),
+                        compaction_mod.estimate_size(messages))
+        self.assertEqual(out[0]['role'], 'user')             # still a valid start
+        self.assertIsInstance(out[0]['content'], str)
+        self.assertTrue(_tool_pairs_balanced(out))           # no orphaned blocks
+        self.assertEqual(messages, snapshot)                 # input not mutated
+
+        # Idempotent / convergent: re-compacting its own output (the trim marker
+        # is not mistaken for a real boundary) does not keep shrinking or break.
+        again = compaction_mod.prepare_context(out)
+        self.assertEqual(again[0]['role'], 'user')
+        self.assertEqual(
+            [m['content'] for m in again if isinstance(m.get('content'), str)].count(
+                compaction_mod.TRIM_MARKER), 1)
+        self.assertTrue(_tool_pairs_balanced(again))
+
+
+class CompactionLoopTests(APITestCase):
+    """Auto-compaction is wired into the real loop and preserves the transcript."""
+
+    @override_settings(AGENT_CONTEXT_CHAR_BUDGET=900)
+    def test_loop_compacts_context_but_keeps_full_stored_transcript(self):
+        user = User.objects.create_user('carol', password='sup3rSecret!')
+        conversation = Conversation.for_user(user)
+        big = 'todo-line ' * 40  # ~400 chars, < the per-result hard cap
+        ChatMessage.objects.create(conversation=conversation, role='user', content='start')
+        for i in range(5):
+            ChatMessage.objects.create(
+                conversation=conversation, role='assistant',
+                content=[{'type': 'tool_use', 'id': f't{i}',
+                          'name': 'list_todos', 'input': {}}])
+            ChatMessage.objects.create(
+                conversation=conversation, role='user',
+                content=[{'type': 'tool_result', 'tool_use_id': f't{i}',
+                          'content': big}])
+        ChatMessage.objects.create(conversation=conversation, role='user', content='now what')
+
+        class _Capture:
+            def __init__(self):
+                self.messages = self
+                self.seen = []
+
+            def create(self, **kwargs):
+                self.seen.append(copy.deepcopy(kwargs['messages']))
+                return _Response([text_block('All set.')], stop_reason='end_turn')
+
+        fake = _Capture()
+        result = run_agent_turn(user, conversation, fake)
+
+        # The model saw a within-budget, still-valid context...
+        sent = fake.seen[0]
+        self.assertLessEqual(compaction_mod.estimate_size(sent), 900)
+        self.assertEqual(sent[0]['role'], 'user')
+        self.assertIsInstance(sent[0]['content'], str)
+        self.assertTrue(_tool_pairs_balanced(sent))
+        self.assertTrue(any('All set.' in m['text']
+                            for m in result['messages'] if m['role'] == 'assistant'))
+
+        # ...even though the full stored transcript is over budget and every
+        # original tool result is still full-fidelity in the DB (compaction
+        # only shrinks the in-memory context, never the persisted history).
+        stored = ChatMessage.objects.filter(conversation=conversation)
+        full = [{'role': m.role, 'content': m.content} for m in stored]
+        self.assertGreater(compaction_mod.estimate_size(full), 900)
+        stored_results = [
+            b['content'] for m in stored if isinstance(m.content, list)
+            for b in m.content if b.get('type') == 'tool_result'
+        ]
+        self.assertEqual(stored_results, [big] * 5)
+        self.assertNotIn(compaction_mod.COMPACTED_PLACEHOLDER, stored_results)

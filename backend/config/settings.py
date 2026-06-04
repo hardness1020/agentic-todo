@@ -177,6 +177,9 @@ AGENT_MAX_TURNS = int(os.environ.get('AGENT_MAX_TURNS', '8'))
 # At or below this many stored facts, inject them all and skip the secondary
 # memory-retrieval LLM call (it would cost more than it saves).
 AGENT_MEMORY_RETRIEVAL_THRESHOLD = int(os.environ.get('AGENT_MEMORY_RETRIEVAL_THRESHOLD', '5'))
+# Working-context size (JSON chars) past which rule-based auto-compaction starts
+# collapsing old tool results, then trimming old turns, before each model call.
+AGENT_CONTEXT_CHAR_BUDGET = int(os.environ.get('AGENT_CONTEXT_CHAR_BUDGET', '60000'))
 
 # Minimal logging for the agent runner/scheduler: tool calls, retries, model
 # switches, fired jobs. No ANSI, no secrets.
