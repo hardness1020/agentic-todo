@@ -13,8 +13,9 @@ Add an AI assistant to the existing per-user TODO app. From a chatbox on a singl
 screen, an authenticated user can converse with an agent that: performs CRUD on **their own**
 todos via tools; schedules cron jobs that later fire **agentically** and push notifications to the
 web app; remembers per-user facts and recalls them; and operates under a system prompt that is
-assembled fresh each turn from live state (identity, tool catalog, current time, todo stats,
-memories). Every change the agent makes is **reflected reactively in the UI** — the affected item is
+assembled fresh each turn from live state (identity, tool catalog, current time, todo stats, and the
+memories most relevant to the turn — selected by a **secondary, cheaper LLM call**). Every change the
+agent makes is **reflected reactively in the UI** — the affected item is
 highlighted and then updated, so the user watches the agent act. The agent uses Anthropic (Claude)
 and is hardened with LLM error recovery (retry, backoff, model fallback). The app stays
 local-development only, keeps strict per-user data isolation, and **degrades gracefully without an
@@ -39,8 +40,14 @@ API key** (the rest of the app keeps working).
     when a job fires, a real agent turn runs for that user with the job's prompt, may modify todos,
     and calls a `notify_user` tool to create a notification.
   - **Memory:** per-user durable facts (`remember`/`recall`), upserted by key.
+  - **Secondary-LLM memory retrieval:** once per turn, a secondary (cheaper/faster) Claude
+    model selects the stored facts relevant to the current message; only those are injected
+    into the system prompt. When a user has at most `AGENT_MEMORY_RETRIEVAL_THRESHOLD` facts,
+    all are injected directly (no extra call). Retrieval is **best-effort** — any failure (an
+    unparseable reply, an LLM error, or a missing key) falls back to injecting all facts
+    (length-capped). This is the `Secondary LLM → Memory` (load / retrieval) path in the design.
   - **Dynamic system-prompt assembly:** rebuilt each turn from identity + tool catalog +
-    current UTC time + todo stats + injected memories.
+    current UTC time + todo stats + the retrieved (relevant) subset of memories.
   - **LLM error recovery:** 429 backoff with jitter, 529/overload → fallback model after N retries,
     `max_tokens` escalation/continuation, prompt-too-long → one reactive trim, and graceful
     degradation when `ANTHROPIC_API_KEY` is absent.
@@ -73,7 +80,8 @@ API key** (the rest of the app keeps working).
 - **Out of scope:**
   - Streaming chat responses (SSE/WebSockets); real-time push (notifications use polling).
   - Multi-conversation / multi-thread chat UI (one conversation per user).
-  - Sharing/collaboration, voice, RAG/vector or semantic memory.
+  - Sharing/collaboration, voice, and **vector/embedding-based RAG** — memory retrieval is a
+    lightweight secondary-LLM relevance pass over the user's own stored facts, not embeddings.
   - The heavier `code.py` mechanisms: worktrees, teammates/message-bus, MCP, subagents, skills,
     hook/permission pipeline, full context compaction, background tasks.
   - Celery/Redis or any new scheduling/broker infrastructure.
@@ -102,7 +110,8 @@ API key** (the rest of the app keeps working).
 
 ### Tool
 - **Allowed tools/APIs:**
-  - Anthropic Messages API (tool use) via the `anthropic` Python SDK; model configurable by env.
+  - Anthropic Messages API (tool use) via the `anthropic` Python SDK; a primary model, an optional
+    fallback model, and a **secondary model** (for memory retrieval) — all configurable by env.
   - A **fixed tool catalog** (12 tools): `create_todo`, `list_todos`, `update_todo`,
     `complete_todo`, `delete_todo`, `get_todo_stats`, `remember`, `recall`, `schedule_cron`,
     `list_crons`, `cancel_cron`, `notify_user`. Each handler runs Django ORM operations scoped to
@@ -131,6 +140,10 @@ API key** (the rest of the app keeps working).
     switching to the fallback model; `max_tokens` 8000 escalating to 16000 once, then a bounded
     continuation; bounded tool-loop turns per request.
   - Injected memory is length-capped (~2000 chars) to bound prompt size/cost.
+  - **Memory retrieval** calls the secondary model **at most once per turn**, and only when stored
+    facts exceed `AGENT_MEMORY_RETRIEVAL_THRESHOLD` (default 5); it is best-effort and **not** retried
+    (any failure falls back to injecting all facts, capped), so it adds at most one short, bounded
+    call to a turn's latency.
   - The scheduler polls every ~30 s and matches cron at minute granularity; jobs only fire while
     `run_scheduler` is running (no missed-minute backfill).
   - The reactive-highlight animation is purely client-side (CSS, ~1.5 s) and adds no server cost.
@@ -169,6 +182,10 @@ API key** (the rest of the app keeps working).
   - **Agent tool isolation:** user A's scripted `update`/`delete`/`complete_todo` against user B's id
     mutates nothing; `list_todos`/`recall`/`list_crons`/stats never cross users.
   - Memory upsert by `(owner, key)` and per-user isolation, including in the assembled prompt.
+  - **Secondary-LLM memory retrieval:** below the threshold all facts are injected with **no**
+    secondary call; above it, the secondary model's scripted selection drives which facts are
+    injected; an LLM error or unparseable reply falls back to injecting all facts. (Fake client,
+    offline.)
   - Scheduler firing: a matching job fires once (double-fire guard), a one-shot deactivates,
     a recurring job stays active, and the fire creates a notification owned by the job's owner.
   - Notification and stats endpoints are owner-scoped; `401` without a token.
@@ -204,8 +221,11 @@ unchanged.
 - The chat `POST` returns the new messages **plus an `actions` summary** (`{action, resource:'todo',
   id}` for each todo mutation this turn) so the frontend can target its reactive highlights.
 - Service layer: `llm.py` (Anthropic client factory + `RecoveryState` + `with_retry`),
-  `prompt.py` (`assemble_system_prompt`), `tools.py` (static `TOOL_SCHEMAS` + `build_handlers(user)`
-  closure — the isolation guardrail), `runner.py` (`run_agent_turn`, also collects `actions`),
+  `memory.py` (`candidate_memories` / `format_memories` / `retrieve_relevant` — the secondary-LLM
+  relevance pass with a below-threshold short-circuit and best-effort fallback),
+  `prompt.py` (`assemble_system_prompt(user, memory_block)`), `tools.py` (static `TOOL_SCHEMAS` +
+  `build_handlers(user)` closure — the isolation guardrail), `runner.py` (`run_agent_turn` retrieves
+  the relevant memories once per turn, then runs the tool loop and collects `actions`),
   `cron.py` (pure cron validate/match ported from `code.py`).
 - Scheduler: `python manage.py run_scheduler` polls active jobs (~30 s), sets the minute marker and
   deactivates one-shots **before** firing each matching job agentically via the shared runner.
@@ -254,8 +274,9 @@ unchanged.
 **Config / run**
 - `requirements.txt`: add `anthropic`. `settings.py`: add `agent` to `INSTALLED_APPS` (no DRF
   changes). `.env.example`: add `ANTHROPIC_API_KEY` (blank = run without the assistant),
-  `ANTHROPIC_MODEL` (default a current Claude model, e.g. `claude-sonnet-4-6`),
-  `ANTHROPIC_FALLBACK_MODEL` (optional), `AGENT_SCHEDULER_INTERVAL`.
+  `ANTHROPIC_MODEL` (default a current Claude model), `ANTHROPIC_FALLBACK_MODEL` (optional),
+  `ANTHROPIC_SECONDARY_MODEL` (memory-retrieval model, default a fast Claude e.g. `claude-haiku-4-5`),
+  `AGENT_MEMORY_RETRIEVAL_THRESHOLD`, `AGENT_SCHEDULER_INTERVAL`.
 - Run three processes locally: `manage.py runserver`, `manage.py run_scheduler`, and `npm run dev`.
 
 **Tests:** DRF `APITestCase` mirroring the base suite, plus runner tests that inject a fake Anthropic
