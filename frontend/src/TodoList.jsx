@@ -1,126 +1,111 @@
-import { useEffect, useState } from 'react'
-import { api, UnauthorizedError } from './api.js'
+// Todo card: add bar + rows with reactive highlight (flash / enter / remove),
+// complete toggle, hover-reveal edit + delete. The flash/enter/removing ids are
+// owned by the Dashboard so agent-driven and manual changes animate identically.
+import { useState } from 'react'
+import Icon from './Icon.jsx'
 
-export default function TodoList({ onUnauthorized }) {
-  const [todos, setTodos] = useState([])
-  const [title, setTitle] = useState('')
-  const [error, setError] = useState('')
+export default function TodoList({
+  todos,
+  flashId,
+  enteringId,
+  removingId,
+  onAdd,
+  onToggle,
+  onDelete,
+  onEdit,
+}) {
+  const [text, setText] = useState('')
   const [editingId, setEditingId] = useState(null)
-  const [editTitle, setEditTitle] = useState('')
+  const [editText, setEditText] = useState('')
 
-  // Centralized error handling: 401 logs the user out.
-  function handleError(err) {
-    if (err instanceof UnauthorizedError) onUnauthorized()
-    else setError('Could not reach the server. Try again.')
-  }
-
-  async function load() {
-    try {
-      const data = await api.listTodos()
-      setTodos(data.results)
-      setError('')
-    } catch (err) {
-      handleError(err)
-    }
-  }
-
-  useEffect(() => {
-    load()
-  }, [])
-
-  async function addTodo(e) {
+  const submit = (e) => {
     e.preventDefault()
-    if (!title.trim()) return
-    try {
-      await api.createTodo(title.trim())
-      setTitle('')
-      load()
-    } catch (err) {
-      handleError(err)
-    }
+    const v = text.trim()
+    if (!v) return
+    onAdd(v)
+    setText('')
   }
 
-  async function toggle(todo) {
-    try {
-      await api.updateTodo(todo.id, { completed: !todo.completed })
-      load()
-    } catch (err) {
-      handleError(err)
-    }
+  const startEdit = (todo) => {
+    setEditingId(todo.id)
+    setEditText(todo.title)
+  }
+  const commitEdit = (id) => {
+    const v = editText.trim()
+    setEditingId(null)
+    if (v && v !== todos.find((t) => t.id === id)?.title) onEdit(id, v)
   }
 
-  async function saveEdit(id) {
-    if (!editTitle.trim()) return
-    try {
-      await api.updateTodo(id, { title: editTitle.trim() })
-      setEditingId(null)
-      load()
-    } catch (err) {
-      handleError(err)
-    }
-  }
-
-  async function remove(id) {
-    if (!window.confirm('Delete this todo?')) return
-    try {
-      await api.deleteTodo(id)
-      load()
-    } catch (err) {
-      handleError(err)
-    }
-  }
+  const open = todos.filter((t) => !t.completed).length
 
   return (
-    <div>
-      {error && <p className="error">{error}</p>}
-      <form onSubmit={addTodo} className="add">
+    <div className="card">
+      <div className="card-h">
+        <span
+          className="ch-ic"
+          style={{ background: 'var(--rausch-tint)', color: 'var(--rausch)' }}
+        >
+          <Icon name="list" size={17} />
+        </span>
+        <h2>Your todos</h2>
+        <span className="muted">{open} open</span>
+      </div>
+      <form className="addbar" onSubmit={submit}>
         <input
-          placeholder="What needs doing?"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Add a todo…"
         />
-        <button type="submit">Add</button>
+        <button className="btn-primary" type="submit">
+          <Icon name="plus" size={18} /> Add
+        </button>
       </form>
-      <ul className="todos">
-        {todos.map((todo) => (
-          <li key={todo.id}>
-            <input
-              type="checkbox"
-              checked={todo.completed}
-              onChange={() => toggle(todo)}
-            />
-            {editingId === todo.id ? (
-              <>
-                <input
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                />
-                <button onClick={() => saveEdit(todo.id)}>Save</button>
-                <button className="link" onClick={() => setEditingId(null)}>
-                  Cancel
-                </button>
-              </>
+      <div className="todos">
+        {todos.length === 0 && (
+          <div className="empty">Nothing here yet — ask ToDo to add something.</div>
+        )}
+        {todos.map((t) => (
+          <div
+            key={t.id}
+            className={
+              'todo' +
+              (t.completed ? ' done' : '') +
+              (t.id === flashId ? ' flash' : '') +
+              (t.id === enteringId ? ' entering' : '') +
+              (t.id === removingId ? ' removing' : '')
+            }
+          >
+            <button
+              className={'ck' + (t.completed ? ' done' : '')}
+              onClick={() => onToggle(t)}
+              aria-label={t.completed ? 'Mark not done' : 'Mark done'}
+            >
+              {t.completed && <Icon name="check" size={15} stroke={3} />}
+            </button>
+            {editingId === t.id ? (
+              <input
+                className="title-edit"
+                autoFocus
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                onBlur={() => commitEdit(t.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitEdit(t.id)
+                  if (e.key === 'Escape') setEditingId(null)
+                }}
+              />
             ) : (
-              <>
-                <span className={todo.completed ? 'done' : ''}>{todo.title}</span>
-                <button
-                  className="link"
-                  onClick={() => {
-                    setEditingId(todo.id)
-                    setEditTitle(todo.title)
-                  }}
-                >
-                  Edit
-                </button>
-                <button className="link" onClick={() => remove(todo.id)}>
-                  Delete
-                </button>
-              </>
+              <span className="title">{t.title}</span>
             )}
-          </li>
+            <button className="edit" onClick={() => startEdit(t)} aria-label="Edit">
+              <Icon name="pencil" size={16} />
+            </button>
+            <button className="del" onClick={() => onDelete(t)} aria-label="Delete">
+              <Icon name="trash" size={16} />
+            </button>
+          </div>
         ))}
-        {todos.length === 0 && <li className="empty">No todos yet.</li>}
-      </ul>
+      </div>
     </div>
   )
 }

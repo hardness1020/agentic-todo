@@ -1,163 +1,221 @@
 <div align="center">
 
-# 📝 Multi-User TODO
+# 📝 Agentic ToDo
 
-A small, full-stack TODO application built test-first from an approved PRD.
-Register, log in, and manage your own todos — backed by JWT auth and a REST API.
+A multi-user TODO app fronted by an **agentic AI assistant**. From one chatbox it does
+CRUD on your todos, schedules reminders that later **fire themselves**, and remembers
+your preferences — every action reflected reactively in the dashboard.
 
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Django](https://img.shields.io/badge/Django-4.2_LTS-092E20?logo=django&logoColor=white)](https://www.djangoproject.com/)
 [![DRF](https://img.shields.io/badge/DRF-3.16-A30000)](https://www.django-rest-framework.org/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Tests](https://img.shields.io/badge/tests-21_passing-success)](#testing)
+[![Anthropic](https://img.shields.io/badge/Anthropic-Claude-D97757)](https://docs.anthropic.com/)
+[![Tests](https://img.shields.io/badge/tests-68_passing-success)](#testing)
 
 </div>
 
 ---
 
-## Overview
+## 🤖 The agent
 
-A multi-user TODO list where each user manages a private set of items. Authentication
-is JWT-based, data persists in SQLite, and the UI is a minimal React SPA. Built for
-**local development**, with a backend test suite covering the auth flow, CRUD, input
-validation, and per-user data isolation.
+<div align="center">
+  <img src="assets/agentic-system-design.png" alt="Agentic system design: prompt assembly, error-recovery-wrapped LLM, tool catalog, persisted messages, and per-user memory" width="760">
+</div>
+
+One **tool-calling loop** (`agent/runner.py`) powers both chat turns and fired cron jobs.
+Each turn maps to the diagram above:
+
+- **Dynamic system prompt** — reassembled every turn from live state: identity, the
+  **tool catalog** (generated from the schemas, never hand-maintained), guidance, current
+  time, todo stats, and the user's injected **memory**. → `prompt.py`
+- **Error-recovery-wrapped LLM call** — 429 backoff w/ jitter, 529 → fallback model,
+  `max_tokens` escalation + continuation, one prompt-too-long trim, graceful no-key
+  degradation. → `llm.py`
+- **Tools, scoped to the caller** — a fixed 12-tool catalog; each handler is a **closure
+  over `request.user`**, so the model gets no id it can override and any cross-user id
+  resolves to a benign "not found". → `tools.py`
+- **Secondary-LLM memory retrieval** — once per turn a cheaper/faster Claude model picks the
+  stored facts relevant to the current message; only those are injected. Below
+  `AGENT_MEMORY_RETRIEVAL_THRESHOLD` facts it injects all (no extra call), and any failure falls
+  back to injecting all — the `Secondary LLM → Memory` path. → `memory.py`
+- **Persisted `Messages[]`** — the transcript seeds context across turns; per-user
+  **memory** is upserted by key. → `models.py`
+  
+
+| Agentic feature | What it does |
+|---|---|
+| **Chat → action** | Natural-language CRUD on todos via the tool loop; the chat shows each tool call it made. |
+| **Agentic cron** | `schedule_cron` persists a 5-field job; when it fires, a **real agent turn** runs for that user and calls `notify_user`. |
+| **Per-user memory** | `remember` / `recall` durable facts, injected into every system prompt (length-capped). |
+| **Reactive UI** | Agent changes **flash yellow, then apply** — todos/reminders/memory rows highlight first, then create / update / fade. |
+| **Notifications** | Header bell popover + bottom-left toasts, polled every ~10 s. |
+| **Hardened** | Bounded tool-loop turns; isolation enforced structurally; the API key is never logged or returned. |
+
+> The shared loop is reused verbatim by the chat endpoint and the `run_scheduler` command,
+> so synchronous chats and agentic cron fires use the same tools, prompt assembly, and
+> recovery. (Heavier reference mechanisms — LLM-based compaction / secondary-model
+> retrieval — are out of scope; memory injection and a single reactive trim cover this app.)
+
+## Base app
+
+A multi-user TODO list where each user manages a private set of items, JWT-protected and
+SQLite-backed. The assistant is **optional**: with no `ANTHROPIC_API_KEY` set, chat returns
+`503` and the scheduler idles — todos, auth, and the rest of the app keep working.
 
 | | |
 |---|---|
-| **Backend** | Django + Django REST Framework, SimpleJWT |
-| **Frontend** | React 18 + Vite (vanilla `fetch`, minimal CSS) |
-| **Database** | SQLite (Django default) |
+| **Backend** | Django + DRF + SimpleJWT |
+| **Frontend** | React 18 + Vite (vanilla `fetch`, plain CSS, no new deps) |
+| **Database** | SQLite |
 | **Auth** | JWT access tokens (30 min), `Authorization: Bearer <token>` |
+| **AI** | Anthropic Claude (tool use); model configurable by env |
 
-## Screenshots
-
-| Login / Register | Todo list |
-|---|---|
-| ![Login](docs/screenshots/login.png) | ![Todos](docs/screenshots/todos.png) |
-
-## Features
-
-| Feature | Detail |
-|---|---|
-| **Register & log in** | Username + password; passwords stored as salted PBKDF2 hashes, never returned. |
-| **JWT-protected API** | Every `/api/todos/` request requires a valid bearer token; expired/absent tokens get `401`. |
-| **CRUD on todos** | Create, list, edit, toggle-complete, and delete — changes persist across reloads. |
-| **Per-user isolation** | `get_queryset` filters by owner; another user's item returns `404`, never leaking its existence. |
-| **Input validation** | DRF serializers reject empty / missing / over-length titles with structured `400` errors. |
-| **Pagination** | List endpoint is paginated (page size 50) to bound payloads. |
+Core boundaries: registration with salted PBKDF2 passwords; every `/api/` request gated by
+a valid JWT (`401` otherwise); CRUD with structured `400` validation; **per-user isolation**
+via `get_queryset` (another user's row → `404`, never leaking existence); paginated lists.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    subgraph Browser
-        UI[React SPA<br/>Vite :5173]
-    end
+    UI[React SPA · Vite :5173<br/>Dashboard + ChatWidget]
     subgraph Server[Django :8000]
-        AUTH[accounts<br/>register + token]
-        TODO[todos<br/>TodoViewSet]
+        AUTH[accounts · register + token]
+        TODO[todos · TodoViewSet]
+        AGENT[agent · chat · memories · jobs · notifications]
+        RUNNER[[agent runner · tool loop]]
+        SCHED[run_scheduler · cron poller]
     end
     DB[(SQLite)]
+    LLM([Anthropic Claude])
 
-    UI -- "POST /api/auth/register, /token" --> AUTH
-    UI -- "Bearer token<br/>CRUD /api/todos/" --> TODO
+    UI -- "Bearer · CRUD /api/todos/" --> TODO
+    UI -- "POST /api/chat/messages/ · poll" --> AGENT
+    UI -- "register / token" --> AUTH
+    AGENT --> RUNNER
+    SCHED -- "fired job → agent turn" --> RUNNER
+    RUNNER -- "tool use" --> LLM
     AUTH --- DB
     TODO --- DB
+    AGENT --- DB
+    RUNNER --- DB
 ```
 
-The React app stores the JWT in `localStorage` and attaches it as a bearer token on
-every API call. A `401` from the API clears the token and returns the user to the login
-screen. The `TodoViewSet` scopes all queries to `request.user`, so ownership is enforced
-on the server regardless of what the client requests.
+The SPA keeps the JWT in `localStorage`; a `401` clears it and returns to login. Every
+viewset — todos **and** agent — scopes queries to `request.user`, so ownership holds on the
+server regardless of what the client or the model asks for.
 
 ## Quick Start
 
-### Prerequisites
-
-- Python **3.9+**
-- Node **18+** and npm
-
-### 1. Backend (Django API → http://localhost:8000)
+**Prerequisites:** Python 3.9+, Node 18+.
 
 ```bash
+# 1. Backend → http://localhost:8000
 cd backend
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-cp .env.example .env                       # then edit SECRET_KEY
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cp .env.example .env          # set SECRET_KEY; add ANTHROPIC_API_KEY to enable the assistant
 .venv/bin/python manage.py migrate
 .venv/bin/python manage.py runserver
+
+# 2. Scheduler (second terminal) — fires agentic cron jobs
+.venv/bin/python manage.py run_scheduler
+
+# 3. Frontend → http://localhost:5173 (third terminal)
+cd frontend && npm install && npm run dev
 ```
 
-### 2. Frontend (Vite dev server → http://localhost:5173)
+Register, then click the sparkles button (bottom-right) and try *"add buy milk, then mark
+my oldest done"*, *"remind me to stretch every hour"*, or *"remember I prefer short titles"*
+— watch the dashboard update live. Point the UI elsewhere with `VITE_API_BASE` in
+`frontend/.env`.
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+The scheduler polls every `AGENT_SCHEDULER_INTERVAL`s (default 30) and matches cron at minute
+granularity; jobs fire only while it runs (no backfill).
 
-Open http://localhost:5173, register an account, and start adding todos.
-To point the UI at a different API URL, set `VITE_API_BASE` in `frontend/.env`
-(default `http://localhost:8000/api`).
+#### Agent configuration (`backend/.env`)
+
+| Var | Default | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | _(blank)_ | Enables the assistant. Blank ⇒ chat `503`s, scheduler idles; rest of app works. Never logged or returned. |
+| `ANTHROPIC_MODEL` | `claude-opus-4-8` | Model used for tool-use chat. |
+| `ANTHROPIC_FALLBACK_MODEL` | `claude-sonnet-4-6` | Switched to after repeated 529/overloaded errors. |
+| `ANTHROPIC_SECONDARY_MODEL` | `claude-haiku-4-5` | Cheaper model for the per-turn memory-retrieval pass. |
+| `AGENT_MEMORY_RETRIEVAL_THRESHOLD` | `5` | At/below this many facts, inject all and skip the retrieval call. |
+| `AGENT_SCHEDULER_INTERVAL` | `30` | Scheduler poll cadence (seconds). |
+| `AGENT_MAX_TURNS` | `8` | Tool-loop turn cap per turn (runaway guard). |
 
 ## API Reference
 
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `POST` | `/api/auth/register` | — | Create a user → `201` |
-| `POST` | `/api/auth/token` | — | Obtain `{access, refresh}` JWT pair |
-| `GET` | `/api/todos/` | ✅ | List the user's todos (paginated) |
-| `POST` | `/api/todos/` | ✅ | Create a todo |
-| `GET` | `/api/todos/{id}/` | ✅ | Retrieve one todo |
-| `PATCH` | `/api/todos/{id}/` | ✅ | Update title / description / completed |
-| `DELETE` | `/api/todos/{id}/` | ✅ | Delete a todo |
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/auth/register` · `/api/auth/token` | Create a user / obtain a JWT pair (no auth) |
+| `GET` `POST` `PATCH` `DELETE` | `/api/todos/` `…/{id}/` | CRUD on the user's todos (paginated) |
+| `GET` | `/api/todos/stats/` | `{open, done, total}` for the dashboard |
+| `GET` `POST` | `/api/chat/messages/` | Read transcript / send a message → `{messages, actions}` (or `503` w/o a key) |
+| `POST` | `/api/chat/messages/reset/` | Clear the conversation |
+| `GET` `DELETE` | `/api/memories/` `…/{id}/` | List / forget remembered facts |
+| `GET` `DELETE` | `/api/scheduled-jobs/` `…/{id}/` | List / cancel reminders (with human schedule + next-fire labels) |
+| `GET` `PATCH` `DELETE` | `/api/notifications/` `…/{id}/` | List / mark read / delete (+ `mark-all-read/`, `clear/`) |
 
-A `Todo` has: `id`, `title` (required), `description` (optional), `completed`
-(default `false`), `created_at`, `updated_at`, and an `owner` foreign key.
+All `/api/` routes except register/token require a bearer token. The agent's 12 tools
+(`create_todo`, `list_todos`, `update_todo`, `complete_todo`, `delete_todo`,
+`get_todo_stats`, `remember`, `recall`, `schedule_cron`, `list_crons`, `cancel_cron`,
+`notify_user`) run owner-scoped ORM ops and reuse `TodoSerializer` validation.
 
 ## Testing
 
-The backend was written test-first. Run the suite with:
-
 ```bash
-cd backend && .venv/bin/python manage.py test
+cd backend && .venv/bin/python manage.py test     # Ran 68 tests — OK
 ```
 
-```
-Ran 21 tests in ~3s — OK
-```
-
-Coverage spans the auth flow (register, token, bad credentials → `401`), CRUD happy
-paths, input validation, and cross-user isolation (User A cannot read or mutate User
-B's todos).
+A **fake Anthropic client** is injected throughout, so the suite is fully offline and
+deterministic — the real API is never called. Coverage: the base auth/CRUD/validation/
+isolation suite, **plus** the agent — cron validate/match (incl. day-of-month-or-day-of-week),
+a full chat turn (persists messages, scripted `create_todo` creates a todo + returns it in
+`actions`), the no-key `503` path, **agent-tool isolation** (A's scripted ops on B's ids
+mutate nothing), memory upsert/isolation/prompt-injection, scheduler firing (double-fire
+guard, one-shot deactivation, owner-scoped notification), LLM recovery (prompt-too-long
+trim, `max_tokens` tool_use), and owner-scoped endpoints.
 
 ## Project Structure
 
 ```
-.
-├── backend/
-│   ├── config/          # settings, urls (DRF + JWT + CORS)
-│   ├── accounts/        # registration + SimpleJWT token endpoints
-│   ├── todos/           # Todo model, serializer, viewset, tests
-│   └── requirements.txt
-├── frontend/
-│   └── src/             # api.js, App, AuthView, TodoList
-├── docs/screenshots/
-├── PRD.md               # the approved product requirement doc
-└── REVIEW.md            # boundary-compliance review of the implementation
+backend/
+├── config/   # settings, urls (DRF + JWT + CORS + agent include)
+├── accounts/ # registration + SimpleJWT
+├── todos/    # Todo model, serializer, viewset (+ stats), tests
+└── agent/    # AI agent app
+    ├── models.py     # Conversation, ChatMessage, Memory, ScheduledJob, Notification
+    ├── prompt.py     # dynamic system-prompt assembly (catalog from tools.py)
+    ├── memory.py     # secondary-LLM memory retrieval (relevance pass + fallback)
+    ├── tools.py      # TOOL_SCHEMAS + build_handlers(user) closure (isolation guardrail)
+    ├── llm.py        # Anthropic client + RecoveryState + with_retry
+    ├── runner.py     # run_agent_turn / run_cron_turn — the shared tool loop
+    ├── cron.py       # pure 5-field cron validate / match / humanize
+    ├── scheduler.py  # run_due_jobs — minute-granular firing w/ double-fire guard
+    ├── views.py · serializers.py · urls.py
+    ├── management/commands/run_scheduler.py
+    └── tests.py      # offline suite (fake Anthropic client)
+frontend/src/  # api.js, App, AuthView, Dashboard, ChatWidget, Header, Stats,
+               # TodoList, SidePanels, Toasts, Icon, util, styles.css
+ui-design/     # the provided design kit (tokens, mockup, reference JSX)
+docs/          # prd/PRD.md · prd/PRD-ai-agent.md
 ```
 
-## Design Notes & Scope
+## Scope
 
-This project was built against an approved spec: see [`PRD.md`](PRD.md) for the full
-product requirements and boundaries, and [`REVIEW.md`](REVIEW.md) for a boundary-by-boundary
-compliance review of the final implementation (with code evidence and remaining risks).
+Built against approved specs — [`PRD.md`](docs/prd/PRD.md) (base) and
+[`PRD-ai-agent.md`](docs/prd/PRD-ai-agent.md) (agent).
 
-In line with the PRD, the following are intentionally **out of scope**: sharing/
-collaboration, due dates and tags, email verification / password reset / OAuth, and
-production hardening (HTTPS, refresh-token rotation, rate limiting). There are no
-refresh tokens — users re-login when the 30-minute access token expires.
+**Out of scope:** sharing/collaboration, due dates/tags, OAuth/refresh tokens, production
+hardening (HTTPS, rate limiting); for the agent — streaming, multi-conversation UI,
+RAG/vector memory, and broker infra (Celery/Redis). Chat turns are synchronous and the
+scheduler is a single local poller. 
+
+**Known limitation:** retry sleeps and the LLM call
+block the request worker thread — fine for local single-user use; production would offload
+turns to a task queue.
 
 ## License
 

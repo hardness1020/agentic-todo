@@ -15,4 +15,5 @@ urlpatterns = [
     path('api/auth/register', RegisterView.as_view(), name='register'),
     path('api/auth/token', TokenObtainPairView.as_view(), name='token_obtain'),
     path('api/', include(router.urls)),
+    path('api/', include('agent.urls')),
 ]
