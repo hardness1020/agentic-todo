@@ -17,6 +17,41 @@ preferences — every action reflected live in the dashboard.
 
 ---
 
+## 🎬 See it in action
+
+<table>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/e9a066cf-a597-4e1f-aa1c-7700b6a89b75" alt="Todo CRUD via chat" width="100%"><br>
+      <b>Todo CRUD via chat</b>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/0df2aeca-4b38-4f1d-91a6-0e235d40b2f5" alt="Reminder CRUD via chat" width="100%"><br>
+      <b>Reminder CRUD via chat</b>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/1d3a6c81-ec66-48a3-999a-3c90acded6b5" alt="Memory CRUD via chat" width="100%"><br>
+      <b>Memory CRUD via chat</b>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/474acf00-b67d-4652-8a53-da1a1c5cc60f" alt="Many actions in one agent loop" width="100%"><br>
+      <b>Many actions in one loop</b>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/f41b9ddf-e6cc-4615-8d6a-f95d505f1860" alt="Memory shapes later actions" width="100%"><br>
+      <b>Memory shapes actions</b>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/2622d194-878c-48b6-aa06-443083eaa553" alt="Reminder fires and notifies" width="100%"><br>
+      <b>Reminder fires → notification</b>
+    </td>
+  </tr>
+</table>
+
 ## 🤖 The agent
 
 <div align="center">

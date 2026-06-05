@@ -16,3 +16,7 @@ frontend/dist/
 
 .claude/
 code.py
+
+# Demo GIFs are hosted on a GitHub issue (referenced by URL in the README), not committed
+assets/*.gif
+assets/demo
