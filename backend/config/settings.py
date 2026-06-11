@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'accounts',
     'todos',
+    'agent',
 ]
 
 MIDDLEWARE = [
@@ -159,3 +160,36 @@ CORS_ALLOWED_ORIGINS = os.environ.get(
     'CORS_ALLOWED_ORIGINS',
     'http://localhost:5173,http://127.0.0.1:5173',
 ).split(',')
+
+
+# ── AI agent (Anthropic) ──
+# The key is optional: with it blank the assistant degrades gracefully (chat
+# returns 503, the scheduler idles) while the rest of the app keeps working.
+# It is read here and never logged or returned in any response.
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
+ANTHROPIC_MODEL = os.environ.get('ANTHROPIC_MODEL', 'claude-opus-4-8')
+ANTHROPIC_FALLBACK_MODEL = os.environ.get('ANTHROPIC_FALLBACK_MODEL', 'claude-sonnet-4-6')
+# Secondary (cheaper/faster) model used for the per-turn memory-retrieval pass.
+ANTHROPIC_SECONDARY_MODEL = os.environ.get('ANTHROPIC_SECONDARY_MODEL', 'claude-haiku-4-5')
+# Scheduler poll cadence (seconds) and the per-turn tool-loop cap.
+AGENT_SCHEDULER_INTERVAL = int(os.environ.get('AGENT_SCHEDULER_INTERVAL', '30'))
+AGENT_MAX_TURNS = int(os.environ.get('AGENT_MAX_TURNS', '8'))
+# At or below this many stored facts, inject them all and skip the secondary
+# memory-retrieval LLM call (it would cost more than it saves).
+AGENT_MEMORY_RETRIEVAL_THRESHOLD = int(os.environ.get('AGENT_MEMORY_RETRIEVAL_THRESHOLD', '5'))
+# Working-context size (JSON chars) past which rule-based auto-compaction starts
+# collapsing old tool results, then trimming old turns, before each model call.
+AGENT_CONTEXT_CHAR_BUDGET = int(os.environ.get('AGENT_CONTEXT_CHAR_BUDGET', '60000'))
+
+# Minimal logging for the agent runner/scheduler: tool calls, retries, model
+# switches, fired jobs. No ANSI, no secrets.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler'},
+    },
+    'loggers': {
+        'agent': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+    },
+}

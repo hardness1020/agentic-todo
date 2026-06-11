@@ -31,6 +31,7 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
   const data = resp.status === 204 ? null : await resp.json()
   if (!resp.ok) {
     const err = new Error('Request failed')
+    err.status = resp.status
     err.data = data
     throw err
   }
@@ -48,4 +49,27 @@ export const api = {
   updateTodo: (id, patch) =>
     request(`/todos/${id}/`, { method: 'PATCH', body: patch }),
   deleteTodo: (id) => request(`/todos/${id}/`, { method: 'DELETE' }),
+  todoStats: () => request('/todos/stats/'),
+
+  // ── Agent: chat ──
+  listChat: () => request('/chat/messages/'),
+  sendChat: (content) =>
+    request('/chat/messages/', { method: 'POST', body: { content } }),
+  resetChat: () => request('/chat/messages/reset/', { method: 'POST' }),
+
+  // ── Agent: memories ──
+  listMemories: () => request('/memories/'),
+  forgetMemory: (id) => request(`/memories/${id}/`, { method: 'DELETE' }),
+
+  // ── Agent: scheduled jobs (reminders) ──
+  listScheduledJobs: () => request('/scheduled-jobs/'),
+  cancelScheduledJob: (id) =>
+    request(`/scheduled-jobs/${id}/`, { method: 'DELETE' }),
+
+  // ── Agent: notifications ──
+  listNotifications: () => request('/notifications/'),
+  markAllNotificationsRead: () =>
+    request('/notifications/mark-all-read/', { method: 'POST' }),
+  clearNotifications: () =>
+    request('/notifications/clear/', { method: 'POST' }),
 }

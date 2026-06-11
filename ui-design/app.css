@@ -1,135 +1,7 @@
-/* ============================================================
-   Tally Design System — Foundations + Dashboard app styling.
-   Merged from the ui-design kit (colors_and_type.css + app.css)
-   and wired into the real React + Vite frontend.
-   ============================================================ */
-
-/* ---- Webfont (Nunito Sans, bundled by Vite) ------------------ */
-@font-face {
-  font-family: "Nunito Sans";
-  src: url("./fonts/NunitoSans.ttf") format("truetype-variations");
-  font-weight: 200 900;
-  font-stretch: 75% 125%;
-  font-style: normal;
-  font-display: swap;
-}
-
-:root {
-  /* Brand — Rausch Red family */
-  --rausch:            #ff385c;
-  --rausch-deep:       #e00b41;
-  --rausch-tint:       #fff0f3;
-
-  /* Premium tiers */
-  --luxe:              #460479;
-  --plus:              #92174d;
-
-  /* Neutral text scale */
-  --ink:               #222222;
-  --ink-focused:       #3f3f3f;
-  --ink-soft:          #6a6a6a;
-  --ink-faint:         #929292;
-  --ink-disabled:      rgba(0,0,0,0.24);
-
-  /* Surfaces */
-  --white:             #ffffff;
-  --surface:           #f7f7f7;
-  --surface-2:         #f2f2f2;
-  --surface-3:         #ebebeb;
-
-  /* Borders / dividers */
-  --border:            #dddddd;
-  --border-strong:     #c1c1c1;
-  --border-faint:      #ebebeb;
-
-  /* Semantic */
-  --success:           #1f8a5b;
-  --success-tint:      #e8f5ee;
-  --warning:           #b8730a;
-  --warning-tint:      #fcf3e2;
-  --error:             #c13515;
-  --error-hover:       #b32505;
-  --error-tint:        #fdecea;
-  --info:              #428bff;
-
-  /* Reactive highlight — the "agent just touched this" flash */
-  --highlight:         #fff3c4;
-  --highlight-ring:    #f4cf57;
-
-  /* Semantic aliases */
-  --bg-page:           var(--surface);
-  --bg-card:           var(--white);
-  --fg:                var(--ink);
-  --fg-muted:          var(--ink-soft);
-  --fg-faint:          var(--ink-faint);
-  --accent:            var(--rausch);
-  --accent-pressed:    var(--rausch-deep);
-  --link:              var(--info);
-
-  /* Typography */
-  --font-sans: "Nunito Sans", Circular, -apple-system, BlinkMacSystemFont,
-               system-ui, Roboto, "Helvetica Neue", sans-serif;
-  --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
-
-  --w-regular:   400;
-  --w-medium:    500;
-  --w-semibold:  600;
-  --w-bold:      700;
-  --w-extra:     800;
-
-  --text-display: 2.5rem;
-  --text-h1:      1.75rem;
-  --text-h2:      1.375rem;
-  --text-h3:      1.25rem;
-  --text-lg:      1.125rem;
-  --text-base:    1rem;
-  --text-sm:      0.875rem;
-  --text-xs:      0.8125rem;
-  --text-tag:     0.75rem;
-  --text-badge:   0.6875rem;
-  --text-micro:   0.5rem;
-
-  --lh-tight:   1.18;
-  --lh-snug:    1.25;
-  --lh-normal:  1.43;
-
-  --tracking-tight:  -0.44px;
-  --tracking-snug:   -0.18px;
-  --tracking-normal: 0;
-  --tracking-caps:   0.32px;
-
-  /* Spacing */
-  --space-2:  2px;  --space-3:  3px;  --space-4:  4px;  --space-6:  6px;
-  --space-8:  8px;  --space-10: 10px; --space-12: 12px; --space-16: 16px;
-  --space-20: 20px; --space-24: 24px; --space-32: 32px; --space-40: 40px;
-  --space-48: 48px; --space-64: 64px;
-
-  /* Radii */
-  --r-sm: 4px; --r-md: 8px; --r-badge: 14px; --r-card: 20px; --r-lg: 32px; --r-full: 999px;
-
-  /* Elevation */
-  --shadow-card:
-    rgba(0,0,0,0.02) 0px 0px 0px 1px,
-    rgba(0,0,0,0.04) 0px 2px 6px,
-    rgba(0,0,0,0.10) 0px 4px 8px;
-  --shadow-hover:
-    rgba(0,0,0,0.04) 0px 0px 0px 1px,
-    rgba(0,0,0,0.08) 0px 4px 12px,
-    rgba(0,0,0,0.12) 0px 8px 20px;
-  --shadow-pop:
-    rgba(0,0,0,0.06) 0px 0px 0px 1px,
-    rgba(0,0,0,0.12) 0px 12px 32px,
-    rgba(0,0,0,0.16) 0px 6px 16px;
-  --focus-ring: 0 0 0 2px var(--white), 0 0 0 4px var(--ink);
-
-  /* Motion */
-  --ease-out:   cubic-bezier(0.2, 0.8, 0.2, 1);
-  --ease-press: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --dur-fast:   140ms;
-  --dur-base:   220ms;
-  --dur-slow:   400ms;
-  --dur-flash:  1500ms;
-}
+/* Tally Dashboard — app styling.
+   Forks the design-system kit and extends it: floating collapsible chat,
+   scheduled-reminders & memory cards, notifications popover, momentum bar.
+   All values resolve to ../colors_and_type.css tokens. */
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -174,11 +46,6 @@ input, textarea { font-family: inherit; }
 .icon-btn.active { background: var(--surface-3); }
 .icon-btn:active { transform: scale(0.92); }
 .icon-btn svg { width: 21px; height: 21px; }
-.logout {
-  font-size: 13px; font-weight: 700; color: var(--ink-soft);
-  padding: 8px 12px; border-radius: 999px; transition: background var(--dur-base), color var(--dur-base);
-}
-.logout:hover { background: var(--surface-2); color: var(--ink); }
 .dot {
   position: absolute; top: 6px; right: 5px; min-width: 17px; height: 17px;
   border-radius: 999px; background: var(--rausch); color: #fff;
@@ -203,8 +70,7 @@ input, textarea { font-family: inherit; }
 @keyframes popIn { from { transform: translateY(-6px) scale(0.97); } to { transform: none; } }
 .pop-h { display: flex; align-items: center; gap: 10px; padding: 16px 18px 12px; }
 .pop-h h3 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -0.2px; }
-.pop-h .clear { font-size: 13px; font-weight: 700; color: var(--ink-soft); padding: 6px 9px; border-radius: 8px; transition: background var(--dur-base); }
-.pop-h .clear.right { margin-left: auto; }
+.pop-h .clear { margin-left: auto; font-size: 13px; font-weight: 700; color: var(--ink-soft); padding: 6px 9px; border-radius: 8px; transition: background var(--dur-base); }
 .pop-h .clear:hover { background: var(--surface-2); color: var(--ink); }
 .pop-list { max-height: 360px; overflow-y: auto; padding: 0 8px 8px; }
 .noti {
@@ -229,12 +95,6 @@ input, textarea { font-family: inherit; }
 .cols { display: grid; grid-template-columns: 1fr 332px; gap: 24px; align-items: start; }
 @media (max-width: 880px){ .cols { grid-template-columns: 1fr; } }
 .side { display: flex; flex-direction: column; gap: 24px; }
-.banner {
-  background: var(--warning-tint); color: var(--warning); border-radius: 14px;
-  padding: 12px 16px; font-size: 13.5px; font-weight: 600; margin-bottom: 18px;
-  border: 1px solid #f0dcb0;
-}
-.banner.error { background: var(--error-tint); color: var(--error); border-color: #f3c8be; }
 
 /* ---------- Stats ---------- */
 .stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-bottom: 14px; }
@@ -296,22 +156,18 @@ input, textarea { font-family: inherit; }
 .ck.done svg { width: 15px; height: 15px; color: #fff; }
 .todo .title { flex: 1; font-size: 15px; font-weight: 500; }
 .todo.done .title { color: var(--ink-faint); text-decoration: line-through; }
-.todo .title-edit { flex: 1; font-size: 15px; font-weight: 500; padding: 6px 10px; border: 1px solid var(--ink); border-radius: 8px; outline: none; }
 .todo .del { opacity: 0; color: var(--ink-faint); width: 30px; height: 30px; border-radius: 50%; background: transparent; display:flex; align-items:center; justify-content:center; transition: opacity var(--dur-base), background var(--dur-base); }
-.todo:hover .del, .todo:hover .edit { opacity: 1; }
-.todo .edit { opacity: 0; color: var(--ink-faint); width: 30px; height: 30px; border-radius: 50%; background: transparent; display:flex; align-items:center; justify-content:center; transition: opacity var(--dur-base), background var(--dur-base); }
-.todo .edit:hover { background: var(--surface-3); color: var(--ink); }
+.todo:hover .del { opacity: 1; }
 .todo .del:hover { background: var(--error-tint); color: var(--error); }
-.todo .del svg, .todo .edit svg { width: 16px; height: 16px; }
+.todo .del svg { width: 16px; height: 16px; }
 .empty { padding: 28px 18px; color: var(--fg-faint); font-size: 14px; text-align: center; }
 
 /* ---------- Side cards: reminders & memory ---------- */
 .mini { padding: 2px 12px 12px; display: flex; flex-direction: column; gap: 4px; }
-.mini-row { display: flex; align-items: center; gap: 12px; padding: 10px 10px; border-radius: 14px; transition: background var(--dur-base), opacity var(--dur-base), transform var(--dur-base); }
+.mini-row { display: flex; align-items: center; gap: 12px; padding: 10px 10px; border-radius: 14px; transition: background var(--dur-base); }
 .mini-row:hover { background: var(--surface); }
 .mini-row.flash { background: var(--highlight) !important; box-shadow: 0 0 0 2px var(--highlight-ring); animation: flashPulse var(--dur-flash) var(--ease-out); }
 .mini-row.entering { animation: rowRise var(--dur-base) var(--ease-out); }
-.mini-row.removing { opacity: 0; transform: translateX(10px); }
 .mini-row .ic { width: 32px; height: 32px; border-radius: 9px; flex: none; display: flex; align-items: center; justify-content: center; }
 .mini-row .ic svg { width: 16px; height: 16px; }
 .mini-row .info { flex: 1; min-width: 0; }
@@ -364,8 +220,9 @@ input, textarea { font-family: inherit; }
 .cw-h .who .nm { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; }
 .cw-h .who .st { font-size: 12px; color: var(--success); font-weight: 700; display: inline-flex; align-items: center; gap: 5px; margin-top: 1px; }
 .cw-h .who .st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
-.cw-h .min { width: 36px; height: 36px; border-radius: 50%; color: var(--ink-soft); display: flex; align-items: center; justify-content: center; transition: background var(--dur-base); }
-.cw-h .min:disabled { opacity: 0.4; pointer-events: none; }
+.cw-h .min { width: 36px; height: 36px; border-radius: 50%; color: var(--ink-soft); display: flex; align-items: center; justify-content: center; transition: background var(--dur-bas
+
+.cw-h .min:disabled { opacity: 0.4; pointer-events: none; }e); }
 .cw-h .min:hover { background: var(--surface-2); color: var(--ink); }
 .cw-h .min svg { width: 19px; height: 19px; }
 
@@ -378,7 +235,6 @@ input, textarea { font-family: inherit; }
 .msg.asst .av svg { width: 17px; height: 17px; }
 .msg.asst .stack { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 .bub { background: var(--surface-2); border-radius: 18px 18px 18px 4px; padding: 10px 15px; font-size: 14px; line-height: 1.45; }
-.bub.err { background: var(--error-tint); color: var(--error); font-weight: 600; }
 
 /* tool-call activity */
 .acts { display: flex; flex-direction: column; gap: 5px; }
@@ -439,7 +295,6 @@ input, textarea { font-family: inherit; }
 .auth .btn-primary { width: 100%; justify-content: center; padding: 14px; font-size: 16px; margin-top: 6px; }
 .auth .switch { text-align: center; font-size: 13px; color: var(--fg-muted); margin-top: 18px; }
 .auth .switch a { color: var(--rausch); font-weight: 700; cursor: pointer; }
-.auth .error { color: var(--error); font-size: 13px; font-weight: 600; text-align: center; margin: 0 0 14px; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
